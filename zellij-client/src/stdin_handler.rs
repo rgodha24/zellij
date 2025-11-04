@@ -1,6 +1,6 @@
 use crate::keyboard_parser::KittyKeyboardParser;
 use crate::os_input_output::ClientOsApi;
-use crate::stdin_ansi_parser::StdinAnsiParser;
+use crate::stdin_ansi_parser::{AnsiStdinInstruction, StdinAnsiParser};
 use crate::InputInstruction;
 use std::sync::{Arc, Mutex};
 use termwiz::input::{InputEvent, InputParser, MouseButtons};
@@ -73,7 +73,19 @@ pub(crate) fn stdin_loop(
                     if stdin_ansi_parser.should_parse() {
                         let events = stdin_ansi_parser.parse(buf);
                         if !events.is_empty() {
-                            ansi_stdin_events.append(&mut events.clone());
+                            let mut cacheable_events: Vec<_> = events
+                                .iter()
+                                .filter(|event| {
+                                    !matches!(
+                                        event,
+                                        AnsiStdinInstruction::ClipboardContent(..)
+                                    )
+                                })
+                                .cloned()
+                                .collect();
+                            if !cacheable_events.is_empty() {
+                                ansi_stdin_events.append(&mut cacheable_events);
+                            }
                             let _ = send_input_instructions
                                 .send(InputInstruction::AnsiStdinInstructions(events));
                         }

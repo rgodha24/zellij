@@ -114,6 +114,7 @@ pub(crate) enum ClientInstruction {
     #[allow(dead_code)] // we need the session name here even though we're not currently using it
     RenamedSession(String), // String -> new session name
     ConfigFileUpdated,
+    StartOsc52ClipboardQuery(Vec<u8>),
 }
 
 impl From<ServerToClientMsg> for ClientInstruction {
@@ -136,6 +137,9 @@ impl From<ServerToClientMsg> for ClientInstruction {
             ServerToClientMsg::StartWebServer => ClientInstruction::StartWebServer,
             ServerToClientMsg::RenamedSession { name } => ClientInstruction::RenamedSession(name),
             ServerToClientMsg::ConfigFileUpdated => ClientInstruction::ConfigFileUpdated,
+            ServerToClientMsg::StartOsc52ClipboardQuery { selector } => {
+                ClientInstruction::StartOsc52ClipboardQuery(selector)
+            },
         }
     }
 }
@@ -160,6 +164,9 @@ impl From<&ClientInstruction> for ClientContext {
             ClientInstruction::StartWebServer => ClientContext::StartWebServer,
             ClientInstruction::RenamedSession(..) => ClientContext::RenamedSession,
             ClientInstruction::ConfigFileUpdated => ClientContext::ConfigFileUpdated,
+            ClientInstruction::StartOsc52ClipboardQuery(..) => {
+                ClientContext::StartedParsingStdinQuery
+            },
         }
     }
 }
@@ -1056,6 +1063,26 @@ pub fn start_client(
                         let _ = os_input
                             .send_to_server(ClientToServerMsg::FailedToStartWebServer { error: e });
                     },
+                }
+            },
+            ClientInstruction::ConfigFileUpdated => {
+                if let Some(config_file) = cli_args.config.clone() {
+                    println!(
+                        "Config file {config_file:?} was updated successfully. Restart Zellij to apply changes."
+                    );
+                } else {
+                    println!(
+                        "Config file was updated successfully. Restart Zellij to apply changes."
+                    );
+                }
+            },
+            ClientInstruction::StartOsc52ClipboardQuery(selector) => {
+                log::debug!(
+                    "Server requested OSC 52 clipboard query with selector {:?}",
+                    String::from_utf8_lossy(&selector)
+                );
+                if let Ok(mut parser) = stdin_ansi_parser.lock() {
+                    parser.expect_clipboard_response();
                 }
             },
             _ => {},

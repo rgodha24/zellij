@@ -21,6 +21,7 @@ message ClientToServerMsg {
     WebServerStartedMsg web_server_started = 14;
     FailedToStartWebServerMsg failed_to_start_web_server = 15;
     AttachWatcherClientMsg attach_watcher_client = 16;
+    Osc52ClipboardContentMsg osc52_clipboard_content = 17;
   }
 }
 
@@ -95,4 +96,8 @@ message WebServerStartedMsg {
 
 message FailedToStartWebServerMsg {
   string error = 1;
+}
+
+message Osc52ClipboardContentMsg {
+  bytes clipboard_content = 1;
 }

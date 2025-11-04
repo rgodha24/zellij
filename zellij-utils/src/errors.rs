@@ -300,6 +300,7 @@ pub enum ScreenContext {
     TerminalBackgroundColor,
     TerminalForegroundColor,
     TerminalColorRegisters,
+    Osc52ClipboardResponse,
     ChangeMode,
     ChangeModeForAllClients,
     LeftClick,

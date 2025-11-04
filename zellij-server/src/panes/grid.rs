@@ -354,6 +354,7 @@ pub struct Grid {
     pub focus_event_tracking: bool,
     pub search_results: SearchResult,
     pub pending_clipboard_update: Option<String>,
+    pub pending_clipboard_query: Option<Vec<u8>>,
     ui_component_bytes: Option<Vec<u8>>,
     style: Style,
     debug: bool,
@@ -542,6 +543,7 @@ impl Grid {
             search_results: Default::default(),
             sixel_grid,
             pending_clipboard_update: None,
+            pending_clipboard_query: None,
             ui_component_bytes: None,
             style,
             debug,
@@ -2699,10 +2701,17 @@ impl Perform for Grid {
                     return;
                 }
 
-                let _clipboard = params[1].get(0).unwrap_or(&b'c');
+                let clipboard_param = params.get(1).and_then(|p| p.first()).copied();
                 match params[2] {
                     b"?" => {
-                        // TBD: paste from own clipboard - currently unsupported
+                        let param_to_store = clipboard_param
+                            .map(|c| vec![c])
+                            .unwrap_or_else(|| b"c".to_vec());
+                        log::info!(
+                            "OSC 52 clipboard query detected! Parameter: {:?}",
+                            String::from_utf8_lossy(&param_to_store)
+                        );
+                        self.pending_clipboard_query = Some(param_to_store);
                     },
                     base64 => {
                         if let Ok(bytes) = base64::decode(base64) {

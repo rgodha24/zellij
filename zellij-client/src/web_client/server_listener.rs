@@ -131,6 +131,12 @@ pub fn zellij_server_listener(
                                 reconnect_to_session = Some(connect_to_session);
                                 continue 'reconnect_loop;
                             },
+                            Some(ServerToClientMsg::StartOsc52ClipboardQuery { selector }) => {
+                                log::debug!(
+                                    "Web client received OSC 52 clipboard query for selector {:?}, ignoring",
+                                    String::from_utf8_lossy(&selector)
+                                );
+                            },
                             Some(ServerToClientMsg::QueryTerminalSize) => {
                                 client_connection_bus.send_control(
                                     WebServerToWebClientControlMessage::QueryTerminalSize,

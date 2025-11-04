@@ -137,6 +137,9 @@ pub enum ClientToServerMsg {
     FailedToStartWebServer {
         error: String,
     },
+    Osc52ClipboardContent {
+        clipboard_content: Vec<u8>,
+    },
 }
 
 // Types of messages sent from the server to the client
@@ -172,6 +175,9 @@ pub enum ServerToClientMsg {
         name: String,
     },
     ConfigFileUpdated,
+    StartOsc52ClipboardQuery {
+        selector: Vec<u8>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

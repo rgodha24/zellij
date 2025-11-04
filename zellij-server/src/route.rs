@@ -1699,6 +1699,19 @@ pub(crate) fn route_thread_main(
                             )
                             .with_context(err_context)?;
                         },
+                        ClientToServerMsg::Osc52ClipboardContent { ref clipboard_content } => {
+                            let clipboard_bytes = clipboard_content.clone();
+                            send_to_screen_or_retry_queue!(
+                                rlocked_sessions,
+                                ScreenInstruction::Osc52ClipboardResponse {
+                                    client_id,
+                                    clipboard_content: clipboard_bytes,
+                                },
+                                instruction.clone(),
+                                retry_queue
+                            )
+                            .with_context(err_context)?;
+                        },
                         ClientToServerMsg::FirstClientConnected {
                             cli_assets,
                             is_web_client,

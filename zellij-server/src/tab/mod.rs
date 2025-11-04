@@ -33,6 +33,9 @@ use layout_applier::LayoutApplier;
 use swap_layouts::SwapLayouts;
 
 use self::clipboard::ClipboardProvider;
+struct PendingClipboardQuery {
+    pane_id: u32,
+}
 use crate::route::NotificationEnd;
 use crate::{
     os_input_output::ServerOsApi,
@@ -44,14 +47,14 @@ use crate::{
     plugins::PluginInstruction,
     pty::{ClientTabIndexOrPaneId, PtyInstruction, VteBytes},
     thread_bus::ThreadSenders,
-    ClientId, ServerInstruction,
+    ClientId, ServerInstruction, ServerToClientMsg,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     str,
 };
 use zellij_utils::{
@@ -243,6 +246,7 @@ pub(crate) struct Tab {
     draw_pane_frames: bool,
     auto_layout: bool,
     pending_vte_events: HashMap<u32, Vec<VteBytes>>,
+    pending_clipboard_queries: HashMap<ClientId, VecDeque<PendingClipboardQuery>>,
     pub selecting_with_mouse_in_pane: Option<PaneId>, // this is only pub for the tests
     link_handler: Rc<RefCell<LinkHandler>>,
     clipboard_provider: ClipboardProvider,
@@ -463,6 +467,9 @@ pub trait Pane {
         vec![]
     }
     fn drain_clipboard_update(&mut self) -> Option<String> {
+        None
+    }
+    fn drain_clipboard_query(&mut self) -> Option<Vec<u8>> {
         None
     }
     fn render_full_viewport(&mut self) {}
@@ -779,6 +786,7 @@ impl Tab {
             draw_pane_frames,
             auto_layout,
             pending_vte_events: HashMap::new(),
+            pending_clipboard_queries: HashMap::new(),
             connected_clients,
             selecting_with_mouse_in_pane: None,
             link_handler: Rc::new(RefCell::new(LinkHandler::new())),
@@ -1101,6 +1109,41 @@ impl Tab {
         Ok(())
     }
 
+    pub(crate) fn has_pending_clipboard_query_for(&self, client_id: ClientId) -> bool {
+        self.pending_clipboard_queries
+            .get(&client_id)
+            .map(|queries| !queries.is_empty())
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn handle_clipboard_response_from_client(
+        &mut self,
+        client_id: ClientId,
+        clipboard_bytes: Vec<u8>,
+    ) -> Result<bool> {
+        if let Some(queue) = self.pending_clipboard_queries.get_mut(&client_id) {
+            if let Some(pending_query) = queue.pop_front() {
+                if queue.is_empty() {
+                    self.pending_clipboard_queries.remove(&client_id);
+                }
+                log::debug!(
+                    "Forwarding OSC 52 response from client {:?} to pane {}",
+                    client_id, pending_query.pane_id
+                );
+                self.write_to_pane_id_without_preprocessing(
+                    clipboard_bytes,
+                    PaneId::Terminal(pending_query.pane_id),
+                )?;
+                return Ok(true);
+            }
+        }
+        log::debug!(
+            "Received OSC 52 clipboard response for client {:?} with no pending query",
+            client_id
+        );
+        Ok(false)
+    }
+
     pub fn change_mode_info(&mut self, mode_info: ModeInfo, client_id: ClientId) {
         self.mode_info.borrow_mut().insert(client_id, mode_info);
     }
@@ -1125,6 +1168,7 @@ impl Tab {
             .get_mut(&client_id)
             .map(|c| c.change_to_default_mode()); // TODO: no races?
         self.connected_clients.borrow_mut().remove(&client_id);
+        self.pending_clipboard_queries.remove(&client_id);
         self.set_force_render();
     }
     pub fn drain_connected_clients(
@@ -1147,6 +1191,7 @@ impl Tab {
             .remove(&client_id)
             .unwrap_or_else(|| self.default_mode_info.clone());
         self.connected_clients.borrow_mut().remove(&client_id);
+        self.pending_clipboard_queries.remove(&client_id);
         (client_id, client_mode_info)
     }
     pub fn has_no_connected_clients(&self) -> bool {
@@ -2384,12 +2429,21 @@ impl Tab {
             terminal_output.handle_pty_bytes(bytes);
             let messages_to_pty = terminal_output.drain_messages_to_pty();
             let clipboard_update = terminal_output.drain_clipboard_update();
+            let clipboard_query = terminal_output.drain_clipboard_query();
             for message in messages_to_pty {
                 self.write_to_pane_id_without_preprocessing(message, PaneId::Terminal(pid))
                     .with_context(err_context)?;
             }
             if let Some(string) = clipboard_update {
                 self.write_selection_to_clipboard(&string)
+                    .with_context(err_context)?;
+            }
+            if let Some(clipboard_param) = clipboard_query {
+                log::info!(
+                    "Draining clipboard query from terminal pane, parameter: {:?}",
+                    String::from_utf8_lossy(&clipboard_param)
+                );
+                self.request_clipboard_content(pid, &clipboard_param)
                     .with_context(err_context)?;
             }
         }
@@ -4675,36 +4729,47 @@ impl Tab {
         Ok(())
     }
 
+    fn send_to_connected_clients<F>(
+        &self,
+        add_instructions: F,
+    ) -> Result<HashSet<ClientId>>
+    where
+        F: FnOnce(&mut Output, &HashSet<ClientId>),
+    {
+        let connected_clients: HashSet<ClientId> =
+            { self.connected_clients.borrow().iter().copied().collect() };
+
+        if connected_clients.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let mut output = Output::default();
+        output.add_clients(&connected_clients, self.link_handler.clone(), None);
+
+        add_instructions(&mut output, &connected_clients);
+
+        output.serialize().and_then(|serialized_output| {
+            self.senders
+                .send_to_server(ServerInstruction::Render(Some(serialized_output)))
+        })?;
+
+        Ok(connected_clients)
+    }
+
     fn write_selection_to_clipboard(&self, selection: &str) -> Result<()> {
         let err_context = || format!("failed to write selection to clipboard: '{}'", selection);
 
-        let mut output = Output::default();
-        let connected_clients: HashSet<ClientId> =
-            { self.connected_clients.borrow().iter().copied().collect() };
-        output.add_clients(&connected_clients, self.link_handler.clone(), None);
-        let client_ids = connected_clients.iter().copied();
-        let clipboard_event =
-            match self
+        let clipboard_event = match self.send_to_connected_clients(|output, client_ids| {
+            let _ = self
                 .clipboard_provider
-                .set_content(selection, &mut output, client_ids)
-            {
-                Ok(_) => output
-                    .serialize()
-                    .and_then(|serialized_output| {
-                        self.senders
-                            .send_to_server(ServerInstruction::Render(Some(serialized_output)))
-                    })
-                    .and_then(|_| {
-                        Ok(Event::CopyToClipboard(
-                            self.clipboard_provider.as_copy_destination(),
-                        ))
-                    })
-                    .with_context(err_context)?,
-                Err(err) => {
-                    Err::<(), _>(err).with_context(err_context).non_fatal();
-                    Event::SystemClipboardFailure
-                },
-            };
+                .set_content(selection, output, client_ids.iter().copied());
+        }) {
+            Ok(_) => Event::CopyToClipboard(self.clipboard_provider.as_copy_destination()),
+            Err(err) => {
+                Err::<(), _>(err).with_context(err_context).non_fatal();
+                Event::SystemClipboardFailure
+            },
+        };
         self.senders
             .send_to_plugin(PluginInstruction::Update(vec![(
                 None,
@@ -4713,6 +4778,70 @@ impl Tab {
             )]))
             .context("failed to notify plugins about new clipboard event")
             .non_fatal();
+
+        Ok(())
+    }
+
+    fn request_clipboard_content(&mut self, pane_pid: u32, clipboard_param: &[u8]) -> Result<()> {
+        let err_context = || "failed to request clipboard content";
+
+        let selector_vec = if clipboard_param.is_empty() {
+            vec![b'c']
+        } else {
+            clipboard_param.to_vec()
+        };
+        let clipboard_selector = String::from_utf8_lossy(&selector_vec);
+        log::info!(
+            "Tab received clipboard query request with parameter: {:?}",
+            clipboard_selector
+        );
+
+        match &self.clipboard_provider {
+            ClipboardProvider::Osc52(_) => {
+                log::info!(
+                    "Forwarding OSC 52 query to terminal emulator: ESC]52;{};?ESC\\",
+                    clipboard_selector
+                );
+                let connected_clients = self
+                    .send_to_connected_clients(|output, client_ids| {
+                        output.add_pre_vte_instruction_to_multiple_clients(
+                            client_ids.iter().copied(),
+                            &format!("\u{1b}]52;{};?\u{1b}\\", clipboard_selector),
+                        );
+                    })
+                    .with_context(err_context)?;
+
+                if connected_clients.is_empty() {
+                    log::debug!("No connected clients to satisfy OSC 52 clipboard query");
+                    return Ok(());
+                }
+
+                for client_id in connected_clients {
+                    match self.os_api.send_to_client(
+                        client_id,
+                        ServerToClientMsg::StartOsc52ClipboardQuery {
+                            selector: selector_vec.clone(),
+                        },
+                    ) {
+                        Ok(()) => {
+                            self.pending_clipboard_queries
+                                .entry(client_id)
+                                .or_default()
+                                .push_back(PendingClipboardQuery { pane_id: pane_pid });
+                        },
+                        Err(err) => {
+                            Err::<(), _>(err).with_context(err_context).non_fatal();
+                        },
+                    }
+                }
+                log::info!("OSC 52 query forwarded successfully to clients");
+            },
+            ClipboardProvider::Command(_) => {
+                log::info!(
+                    "Ignoring OSC 52 clipboard query - external copy command configured, OSC 52 passthrough not available"
+                );
+            },
+        }
 
         Ok(())
     }

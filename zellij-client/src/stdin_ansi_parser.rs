@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 const STARTUP_PARSE_DEADLINE_MS: u64 = 500;
+const CLIPBOARD_PARSE_DEADLINE_MS: u64 = 2000;
 use lazy_static::lazy_static;
 use regex::Regex;
 use zellij_utils::{
@@ -45,6 +46,7 @@ pub struct StdinAnsiParser {
     pending_color_sequences: Vec<(usize, String)>,
     pending_events: Vec<AnsiStdinInstruction>,
     parse_deadline: Option<Instant>,
+    pending_clipboard_responses: usize,
 }
 
 impl StdinAnsiParser {
@@ -54,6 +56,7 @@ impl StdinAnsiParser {
             pending_color_sequences: vec![],
             pending_events: vec![],
             parse_deadline: None,
+            pending_clipboard_responses: 0,
         }
     }
     pub fn terminal_emulator_query_string(&mut self) -> String {
@@ -78,6 +81,11 @@ impl StdinAnsiParser {
             Some(Instant::now() + Duration::from_millis(STARTUP_PARSE_DEADLINE_MS));
         query_string
     }
+    pub fn expect_clipboard_response(&mut self) {
+        self.pending_clipboard_responses += 1;
+        self.parse_deadline =
+            Some(Instant::now() + Duration::from_millis(CLIPBOARD_PARSE_DEADLINE_MS));
+    }
     fn drain_pending_events(&mut self) -> Vec<AnsiStdinInstruction> {
         let mut events = vec![];
         events.append(&mut self.pending_events);
@@ -88,10 +96,13 @@ impl StdinAnsiParser {
         }
         events
     }
-    pub fn should_parse(&self) -> bool {
+    pub fn should_parse(&mut self) -> bool {
         if let Some(parse_deadline) = self.parse_deadline {
             if parse_deadline >= Instant::now() {
                 return true;
+            } else {
+                self.parse_deadline = None;
+                self.pending_clipboard_responses = 0;
             }
         }
         false
@@ -135,7 +146,23 @@ impl StdinAnsiParser {
         };
     }
     fn parse_byte(&mut self, byte: u8) {
-        if byte == b't' {
+        if byte == 0x07 {
+            self.raw_buffer.push(byte);
+            if let Some(clipboard_sequence) =
+                AnsiStdinInstruction::clipboard_from_bytes(&self.raw_buffer)
+            {
+                if self.pending_clipboard_responses > 0 {
+                    self.pending_clipboard_responses -= 1;
+                }
+                if self.pending_clipboard_responses == 0 {
+                    self.parse_deadline = None;
+                }
+                self.pending_events.push(clipboard_sequence);
+                self.raw_buffer.clear();
+            } else {
+                self.raw_buffer.clear();
+            }
+        } else if byte == b't' {
             self.raw_buffer.push(byte);
             match AnsiStdinInstruction::pixel_dimensions_from_bytes(&self.raw_buffer) {
                 Ok(ansi_sequence) => {
@@ -157,6 +184,17 @@ impl StdinAnsiParser {
                 self.raw_buffer.clear();
                 self.pending_color_sequences
                     .push((color_register, color_sequence));
+            } else if let Some(clipboard_sequence) =
+                AnsiStdinInstruction::clipboard_from_bytes(&self.raw_buffer)
+            {
+                if self.pending_clipboard_responses > 0 {
+                    self.pending_clipboard_responses -= 1;
+                }
+                if self.pending_clipboard_responses == 0 {
+                    self.parse_deadline = None;
+                }
+                self.pending_events.push(clipboard_sequence);
+                self.raw_buffer.clear();
             } else {
                 self.raw_buffer.clear();
             }
@@ -181,6 +219,7 @@ pub enum AnsiStdinInstruction {
     ForegroundColor(String),
     ColorRegisters(Vec<(usize, String)>),
     SynchronizedOutput(Option<SyncOutput>),
+    ClipboardContent(Vec<u8>),
 }
 
 impl AnsiStdinInstruction {
@@ -254,7 +293,7 @@ impl AnsiStdinInstruction {
             Err("invalid_instruction")
         }
     }
-    pub fn color_registers_from_bytes(color_sequences: &mut Vec<(usize, String)>) -> Option<Self> {
+pub fn color_registers_from_bytes(color_sequences: &mut Vec<(usize, String)>) -> Option<Self> {
         if color_sequences.is_empty() {
             return None;
         }
@@ -263,6 +302,19 @@ impl AnsiStdinInstruction {
             registers.push((color_register, color_sequence));
         }
         Some(AnsiStdinInstruction::ColorRegisters(registers))
+    }
+    pub fn clipboard_from_bytes(bytes: &[u8]) -> Option<Self> {
+        if !bytes.starts_with(b"\x1b]52;") {
+            return None;
+        }
+        let content = if let Some(pos) = bytes.iter().position(|&b| b == 0x07) {
+            &bytes[..=pos]
+        } else if bytes.len() >= 2 && bytes[bytes.len() - 2] == 0x1b && bytes[bytes.len() - 1] == b'\\' {
+            bytes
+        } else {
+            return None;
+        };
+        Some(AnsiStdinInstruction::ClipboardContent(content.to_vec()))
     }
 
     pub fn synchronized_output_from_bytes(bytes: &[u8]) -> Option<Self> {
@@ -281,6 +333,26 @@ impl AnsiStdinInstruction {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AnsiStdinInstruction, StdinAnsiParser};
+
+    #[test]
+    fn parses_clipboard_sequence() {
+        let mut parser = StdinAnsiParser::new();
+        parser.expect_clipboard_response();
+        let events = parser.parse(b"\x1b]52;c;YmF6\x07".to_vec());
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AnsiStdinInstruction::ClipboardContent(bytes) => {
+                assert_eq!(bytes, b"\x1b]52;c;YmF6\x07");
+            },
+            other => panic!("Expected clipboard content, got {:?}", other),
+        }
+        assert!(!parser.should_parse());
     }
 }
 

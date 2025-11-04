@@ -565,6 +565,10 @@ impl Pane for TerminalPane {
         self.grid.pending_clipboard_update.take()
     }
 
+    fn drain_clipboard_query(&mut self) -> Option<Vec<u8>> {
+        self.grid.pending_clipboard_query.take()
+    }
+
     fn start_selection(&mut self, start: &Position, _client_id: ClientId) {
         self.grid.start_selection(start);
         self.set_should_render(true);

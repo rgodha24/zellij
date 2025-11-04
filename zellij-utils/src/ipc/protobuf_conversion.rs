@@ -6,10 +6,10 @@ use crate::{
         ConnStatusMsg, ConnectedMsg, DetachSessionMsg, ExitMsg, ExitReason as ProtoExitReason,
         FailedToStartWebServerMsg, FirstClientConnectedMsg, ForegroundColorMsg,
         InputMode as ProtoInputMode, KeyMsg, KillSessionMsg, LogErrorMsg, LogMsg,
-        QueryTerminalSizeMsg, RenamedSessionMsg, RenderMsg,
-        ServerToClientMsg as ProtoServerToClientMsg, StartWebServerMsg, SwitchSessionMsg,
-        TerminalPixelDimensionsMsg, TerminalResizeMsg, UnblockCliPipeInputMsg,
-        UnblockInputThreadMsg, WebServerStartedMsg,
+        Osc52ClipboardContentMsg, QueryTerminalSizeMsg, RenamedSessionMsg, RenderMsg,
+        ServerToClientMsg as ProtoServerToClientMsg, StartOsc52ClipboardQueryMsg,
+        StartWebServerMsg, SwitchSessionMsg, TerminalPixelDimensionsMsg, TerminalResizeMsg,
+        UnblockCliPipeInputMsg, UnblockInputThreadMsg, WebServerStartedMsg,
     },
     data::InputMode,
     errors::prelude::*,
@@ -110,6 +110,11 @@ impl From<ClientToServerMsg> for ProtoClientToServerMsg {
                 client_to_server_msg::Message::FailedToStartWebServer(FailedToStartWebServerMsg {
                     error,
                 })
+            },
+            ClientToServerMsg::Osc52ClipboardContent { clipboard_content } => {
+                client_to_server_msg::Message::Osc52ClipboardContent(
+                    Osc52ClipboardContentMsg { clipboard_content },
+                )
             },
         };
 
@@ -224,6 +229,11 @@ impl TryFrom<ProtoClientToServerMsg> for ClientToServerMsg {
                     error: failed.error,
                 })
             },
+            Some(client_to_server_msg::Message::Osc52ClipboardContent(osc52)) => {
+                Ok(ClientToServerMsg::Osc52ClipboardContent {
+                    clipboard_content: osc52.clipboard_content,
+                })
+            },
             None => Err(anyhow!("Empty ClientToServerMsg message")),
         }
     }
@@ -285,6 +295,11 @@ impl From<ServerToClientMsg> for ProtoServerToClientMsg {
             },
             ServerToClientMsg::ConfigFileUpdated => {
                 server_to_client_msg::Message::ConfigFileUpdated(ConfigFileUpdatedMsg {})
+            },
+            ServerToClientMsg::StartOsc52ClipboardQuery { selector } => {
+                server_to_client_msg::Message::StartOsc52ClipboardQuery(
+                    StartOsc52ClipboardQueryMsg { selector },
+                )
             },
         };
 
@@ -367,6 +382,11 @@ impl TryFrom<ProtoServerToClientMsg> for ServerToClientMsg {
             },
             Some(server_to_client_msg::Message::ConfigFileUpdated(_)) => {
                 Ok(ServerToClientMsg::ConfigFileUpdated)
+            },
+            Some(server_to_client_msg::Message::StartOsc52ClipboardQuery(query)) => {
+                Ok(ServerToClientMsg::StartOsc52ClipboardQuery {
+                    selector: query.selector,
+                })
             },
             None => Err(anyhow!("Empty ServerToClientMsg message")),
         }

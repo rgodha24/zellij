@@ -273,6 +273,10 @@ pub enum ScreenInstruction {
     TerminalBackgroundColor(String),
     TerminalForegroundColor(String),
     TerminalColorRegisters(Vec<(usize, String)>),
+    Osc52ClipboardResponse {
+        client_id: ClientId,
+        clipboard_content: Vec<u8>,
+    },
     ChangeMode(ModeInfo, ClientId, Option<NotificationEnd>),
     ChangeModeForAllClients(ModeInfo, Option<NotificationEnd>),
     MouseEvent(MouseEvent, ClientId, Option<NotificationEnd>),
@@ -579,6 +583,9 @@ impl From<&ScreenInstruction> for ScreenContext {
                 ScreenContext::TerminalForegroundColor
             },
             ScreenInstruction::TerminalColorRegisters(..) => ScreenContext::TerminalColorRegisters,
+            ScreenInstruction::Osc52ClipboardResponse { .. } => {
+                ScreenContext::Osc52ClipboardResponse
+            },
             ScreenInstruction::ChangeMode(..) => ScreenContext::ChangeMode,
             ScreenInstruction::ChangeModeForAllClients(..) => {
                 ScreenContext::ChangeModeForAllClients
@@ -4811,6 +4818,29 @@ pub(crate) fn screen_thread_main(
             },
             ScreenInstruction::TerminalColorRegisters(color_registers) => {
                 screen.update_terminal_color_registers(color_registers);
+            },
+            ScreenInstruction::Osc52ClipboardResponse {
+                client_id,
+                clipboard_content,
+            } => {
+                if let Some((_, tab)) = screen
+                    .tabs
+                    .iter_mut()
+                    .find(|(_, tab)| tab.has_pending_clipboard_query_for(client_id))
+                {
+                    if let Err(err) =
+                        tab.handle_clipboard_response_from_client(client_id, clipboard_content)
+                    {
+                        Err::<(), _>(err)
+                            .context("failed to forward OSC 52 clipboard response")
+                            .non_fatal();
+                    }
+                } else {
+                    log::debug!(
+                        "OSC 52 clipboard response received for client {:?} with no pending query",
+                        client_id
+                    );
+                }
             },
             ScreenInstruction::ChangeMode(
                 mode_info,

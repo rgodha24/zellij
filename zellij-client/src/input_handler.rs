@@ -306,6 +306,12 @@ impl InputHandler {
                     .send(ClientInstruction::SetSynchronizedOutput(enabled))
                     .unwrap();
             },
+            AnsiStdinInstruction::ClipboardContent(clipboard_bytes) => {
+                self.os_input
+                    .send_to_server(ClientToServerMsg::Osc52ClipboardContent {
+                        clipboard_content: clipboard_bytes,
+                    });
+            },
         }
     }
     fn handle_mouse_event(&mut self, mouse_event: &MouseEvent) {
