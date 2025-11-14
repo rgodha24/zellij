@@ -224,6 +224,9 @@ pub fn zellij_server_listener(
                                     }
                                 }
                             },
+                            Some(ServerToClientMsg::RequestClipboardRead { .. }) => {
+                                // Web clients don't support OSC52 clipboard reads, just ignore
+                            },
                             None => {
                                 if unknown_message_count >= 1000 {
                                     log::error!("Error: Received more than 1000 consecutive unknown server messages, disconnecting.");

@@ -26,7 +26,7 @@ use zellij_utils::shared::clean_string_from_control_and_linebreak;
 use crate::background_jobs::BackgroundJob;
 use crate::pane_groups::PaneGroups;
 use crate::pty_writer::PtyWriteInstruction;
-use crate::screen::CopyOptions;
+use crate::screen::{CopyOptions, ScreenInstruction};
 use crate::ui::{loading_indication::LoadingIndication, pane_boundaries_frame::FrameParams};
 use layout_applier::LayoutApplier;
 use swap_layouts::SwapLayouts;
@@ -453,6 +453,9 @@ pub trait Pane {
     }
     fn drain_clipboard_update(&mut self) -> Option<String> {
         None
+    }
+    fn drain_clipboard_read_request(&mut self) -> bool {
+        false
     }
     fn render_full_viewport(&mut self) {}
     fn relative_position(&self, position_on_screen: &Position) -> Position {
@@ -2517,10 +2520,6 @@ impl Tab {
             }
             if clipboard_read_request {
                 self.request_clipboard_read_from_client(PaneId::Terminal(pid))
-                    .with_context(err_context)?;
-            }
-            if let Some(string) = clipboard_update {
-                self.write_selection_to_clipboard(&string)
                     .with_context(err_context)?;
             }
         }

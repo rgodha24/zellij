@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 const STARTUP_PARSE_DEADLINE_MS: u64 = 500;
+use base64;
 use lazy_static::lazy_static;
 use regex::Regex;
 use zellij_utils::{
