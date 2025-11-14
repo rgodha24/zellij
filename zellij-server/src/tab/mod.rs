@@ -2506,8 +2506,17 @@ impl Tab {
             terminal_output.handle_pty_bytes(bytes);
             let messages_to_pty = terminal_output.drain_messages_to_pty();
             let clipboard_update = terminal_output.drain_clipboard_update();
+            let clipboard_read_request = terminal_output.drain_clipboard_read_request();
             for message in messages_to_pty {
                 self.write_to_pane_id_without_preprocessing(message, PaneId::Terminal(pid))
+                    .with_context(err_context)?;
+            }
+            if let Some(string) = clipboard_update {
+                self.write_selection_to_clipboard(&string)
+                    .with_context(err_context)?
+            }
+            if clipboard_read_request {
+                self.request_clipboard_read_from_client(PaneId::Terminal(pid))
                     .with_context(err_context)?;
             }
             if let Some(string) = clipboard_update {
@@ -4851,7 +4860,16 @@ impl Tab {
             )]))
             .context("failed to notify plugins about new clipboard event")
             .non_fatal();
+        Ok(())
+    }
 
+    fn request_clipboard_read_from_client(&self, _pane_id: PaneId) -> Result<()> {
+        // Send a message to screen to initiate clipboard read from first client
+        // For simplicity in this personal fork, we use request_id=0 and always write
+        // the response back to the active pane
+        self.senders
+            .send_to_screen(ScreenInstruction::RequestClipboardFromClient)
+            .context("failed to send clipboard read request to screen")?;
         Ok(())
     }
     pub fn visible(&mut self, visible: bool) -> Result<()> {

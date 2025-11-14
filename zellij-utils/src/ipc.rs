@@ -138,6 +138,10 @@ pub enum ClientToServerMsg {
     FailedToStartWebServer {
         error: String,
     },
+    ClipboardReadResponse {
+        request_id: u64,
+        content: Option<String>,
+    },
 }
 
 // Types of messages sent from the server to the client
@@ -173,6 +177,9 @@ pub enum ServerToClientMsg {
         name: String,
     },
     ConfigFileUpdated,
+    RequestClipboardRead {
+        request_id: u64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

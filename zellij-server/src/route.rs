@@ -2018,6 +2018,15 @@ pub(crate) fn route_thread_main(
                             let _ =
                                 to_server.send(ServerInstruction::FailedToStartWebServer(error));
                         },
+                        ClientToServerMsg::ClipboardReadResponse {
+                            request_id,
+                            content,
+                        } => {
+                            let _ = to_screen.send(ScreenInstruction::ClipboardReadResponse {
+                                request_id,
+                                content,
+                            });
+                        },
                     }
                     Ok(should_break)
                 };

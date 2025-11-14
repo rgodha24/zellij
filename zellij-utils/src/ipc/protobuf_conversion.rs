@@ -2,11 +2,11 @@ use crate::{
     client_server_contract::client_server_contract::{
         client_to_server_msg, server_to_client_msg, ActionMsg, AttachClientMsg,
         AttachWatcherClientMsg, BackgroundColorMsg, CliPipeOutputMsg, ClientExitedMsg,
-        ClientToServerMsg as ProtoClientToServerMsg, ColorRegistersMsg, ConfigFileUpdatedMsg,
-        ConnStatusMsg, ConnectedMsg, DetachSessionMsg, ExitMsg, ExitReason as ProtoExitReason,
-        FailedToStartWebServerMsg, FirstClientConnectedMsg, ForegroundColorMsg,
-        InputMode as ProtoInputMode, KeyMsg, KillSessionMsg, LogErrorMsg, LogMsg,
-        QueryTerminalSizeMsg, RenamedSessionMsg, RenderMsg,
+        ClientToServerMsg as ProtoClientToServerMsg, ClipboardReadResponseMsg, ColorRegistersMsg,
+        ConfigFileUpdatedMsg, ConnStatusMsg, ConnectedMsg, DetachSessionMsg, ExitMsg,
+        ExitReason as ProtoExitReason, FailedToStartWebServerMsg, FirstClientConnectedMsg,
+        ForegroundColorMsg, InputMode as ProtoInputMode, KeyMsg, KillSessionMsg, LogErrorMsg,
+        LogMsg, QueryTerminalSizeMsg, RenamedSessionMsg, RenderMsg, RequestClipboardReadMsg,
         ServerToClientMsg as ProtoServerToClientMsg, StartWebServerMsg, SwitchSessionMsg,
         TerminalPixelDimensionsMsg, TerminalResizeMsg, UnblockCliPipeInputMsg,
         UnblockInputThreadMsg, WebServerStartedMsg,
@@ -111,6 +111,15 @@ impl From<ClientToServerMsg> for ProtoClientToServerMsg {
             ClientToServerMsg::FailedToStartWebServer { error } => {
                 client_to_server_msg::Message::FailedToStartWebServer(FailedToStartWebServerMsg {
                     error,
+                })
+            },
+            ClientToServerMsg::ClipboardReadResponse {
+                request_id,
+                content,
+            } => {
+                client_to_server_msg::Message::ClipboardReadResponse(ClipboardReadResponseMsg {
+                    request_id,
+                    content,
                 })
             },
         };
@@ -227,6 +236,12 @@ impl TryFrom<ProtoClientToServerMsg> for ClientToServerMsg {
                     error: failed.error,
                 })
             },
+            Some(client_to_server_msg::Message::ClipboardReadResponse(response)) => {
+                Ok(ClientToServerMsg::ClipboardReadResponse {
+                    request_id: response.request_id,
+                    content: response.content,
+                })
+            },
             None => Err(anyhow!("Empty ClientToServerMsg message")),
         }
     }
@@ -288,6 +303,11 @@ impl From<ServerToClientMsg> for ProtoServerToClientMsg {
             },
             ServerToClientMsg::ConfigFileUpdated => {
                 server_to_client_msg::Message::ConfigFileUpdated(ConfigFileUpdatedMsg {})
+            },
+            ServerToClientMsg::RequestClipboardRead { request_id } => {
+                server_to_client_msg::Message::RequestClipboardRead(RequestClipboardReadMsg {
+                    request_id,
+                })
             },
         };
 
@@ -370,6 +390,11 @@ impl TryFrom<ProtoServerToClientMsg> for ServerToClientMsg {
             },
             Some(server_to_client_msg::Message::ConfigFileUpdated(_)) => {
                 Ok(ServerToClientMsg::ConfigFileUpdated)
+            },
+            Some(server_to_client_msg::Message::RequestClipboardRead(request)) => {
+                Ok(ServerToClientMsg::RequestClipboardRead {
+                    request_id: request.request_id,
+                })
             },
             None => Err(anyhow!("Empty ServerToClientMsg message")),
         }

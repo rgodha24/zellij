@@ -256,6 +256,8 @@ pub enum ScreenContext {
     MovePaneRight,
     MovePaneLeft,
     Exit,
+    RequestClipboardFromClient,
+    ClipboardReadResponse,
     ClearScreen,
     DumpScreen,
     DumpLayout,
@@ -495,6 +497,7 @@ pub enum ClientContext {
     StartWebServer,
     RenamedSession,
     ConfigFileUpdated,
+    RequestClipboardRead,
 }
 
 /// Stack call representations corresponding to the different types of [`ServerInstruction`]s.

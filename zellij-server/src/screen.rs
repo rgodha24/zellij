@@ -188,6 +188,8 @@ pub enum ScreenInstruction {
     MovePaneRight(ClientId, Option<NotificationEnd>),
     MovePaneLeft(ClientId, Option<NotificationEnd>),
     Exit,
+    RequestClipboardFromClient,
+    ClipboardReadResponse { request_id: u64, content: Option<String> },
     ClearScreen(ClientId, Option<NotificationEnd>),
     DumpScreen(String, ClientId, bool, Option<NotificationEnd>),
     DumpLayout(Option<PathBuf>, ClientId, Option<NotificationEnd>), // PathBuf is the default configured
@@ -561,6 +563,8 @@ impl From<&ScreenInstruction> for ScreenContext {
             ScreenInstruction::MovePaneRight(..) => ScreenContext::MovePaneRight,
             ScreenInstruction::MovePaneLeft(..) => ScreenContext::MovePaneLeft,
             ScreenInstruction::Exit => ScreenContext::Exit,
+            ScreenInstruction::RequestClipboardFromClient => ScreenContext::RequestClipboardFromClient,
+            ScreenInstruction::ClipboardReadResponse { .. } => ScreenContext::ClipboardReadResponse,
             ScreenInstruction::ClearScreen(..) => ScreenContext::ClearScreen,
             ScreenInstruction::DumpScreen(..) => ScreenContext::DumpScreen,
             ScreenInstruction::DumpLayout(..) => ScreenContext::DumpLayout,
@@ -1672,6 +1676,33 @@ impl Screen {
                 .ok_or_else(|| anyhow!("active tab {} does not exist", tab)),
             None => Err(anyhow!("active tab not found for client {:?}", client_id)),
         }
+    }
+
+    /// Returns a mutable reference to this [`Screen`]'s active [`Overlays`].
+    pub fn get_active_overlays_mut(&mut self) -> &mut Vec<Overlay> {
+        &mut self.overlay.overlay_stack
+    }
+
+    /// Write clipboard content to the active pane as an OSC52 response
+    fn write_clipboard_to_active_pane(&mut self, content: &str) -> Result<()> {
+        let err_context = || "failed to write clipboard content to active pane";
+        
+        // Get first connected client to determine active tab
+        let first_client = self.connected_clients.borrow().iter().next().map(|(id, _)| *id);
+        
+        if let Some(client_id) = first_client {
+            if let Ok(active_tab) = self.get_active_tab_mut(client_id) {
+                // Encode content as base64
+                let base64_content = base64::encode(content);
+                // Format as OSC52 response: ESC]52;c;<base64>ESC\
+                let response = format!("\x1b]52;c;{}\x1b\\", base64_content);
+                
+                // Write to the active pane
+                active_tab.write_to_active_terminal(&None, response.into_bytes(), false, client_id)
+                    .with_context(err_context)?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns a mutable reference to this [`Screen`]'s indexed [`Tab`].
@@ -4994,6 +5025,23 @@ pub(crate) fn screen_thread_main(
             },
             ScreenInstruction::Exit => {
                 break;
+            },
+            ScreenInstruction::RequestClipboardFromClient => {
+                // Send clipboard read request to the first connected client
+                if let Some((client_id, _)) = screen.connected_clients.borrow().iter().next() {
+                    if let Some(os_input) = &mut screen.bus.os_input {
+                        let _ = os_input.send_to_client(
+                            *client_id,
+                            ServerToClientMsg::RequestClipboardRead { request_id: 0 },
+                        );
+                    }
+                }
+            },
+            ScreenInstruction::ClipboardReadResponse { request_id: _, content } => {
+                // Write clipboard content to the active pane as OSC52 response
+                if let Some(content) = content {
+                    screen.write_clipboard_to_active_pane(&content)?;
+                }
             },
             ScreenInstruction::ToggleTab(
                 client_id,

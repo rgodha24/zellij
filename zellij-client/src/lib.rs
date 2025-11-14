@@ -114,6 +114,7 @@ pub(crate) enum ClientInstruction {
     #[allow(dead_code)] // we need the session name here even though we're not currently using it
     RenamedSession(String), // String -> new session name
     ConfigFileUpdated,
+    RequestClipboardRead { request_id: u64 },
 }
 
 impl From<ServerToClientMsg> for ClientInstruction {
@@ -136,6 +137,9 @@ impl From<ServerToClientMsg> for ClientInstruction {
             ServerToClientMsg::StartWebServer => ClientInstruction::StartWebServer,
             ServerToClientMsg::RenamedSession { name } => ClientInstruction::RenamedSession(name),
             ServerToClientMsg::ConfigFileUpdated => ClientInstruction::ConfigFileUpdated,
+            ServerToClientMsg::RequestClipboardRead { request_id } => {
+                ClientInstruction::RequestClipboardRead { request_id }
+            },
         }
     }
 }
@@ -160,6 +164,7 @@ impl From<&ClientInstruction> for ClientContext {
             ClientInstruction::StartWebServer => ClientContext::StartWebServer,
             ClientInstruction::RenamedSession(..) => ClientContext::RenamedSession,
             ClientInstruction::ConfigFileUpdated => ClientContext::ConfigFileUpdated,
+            ClientInstruction::RequestClipboardRead { .. } => ClientContext::RequestClipboardRead,
         }
     }
 }
@@ -1039,6 +1044,15 @@ pub fn start_client(
                 os_input.send_to_server(ClientToServerMsg::TerminalResize {
                     new_size: os_input.get_terminal_size_using_fd(0),
                 });
+            },
+            ClientInstruction::RequestClipboardRead { request_id } => {
+                // Send OSC52 query to terminal to read clipboard
+                // Format: ESC]52;c;?ESC\
+                let _ = os_input.get_stdout_writer().write_all(b"\x1b]52;c;?\x1b\\");
+                // Note: The response will be parsed by stdin_ansi_parser and sent back
+                // We store the request_id in a thread-local or similar to match responses
+                // For simplicity in this personal fork, we just use request_id=0
+                std::env::set_var("ZELLIJ_CLIPBOARD_REQUEST_ID", request_id.to_string());
             },
             ClientInstruction::StartWebServer => {
                 let web_server_base_url = web_server_base_url(

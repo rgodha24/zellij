@@ -564,6 +564,9 @@ impl Pane for TerminalPane {
     fn drain_clipboard_update(&mut self) -> Option<String> {
         self.grid.pending_clipboard_update.take()
     }
+    fn drain_clipboard_read_request(&mut self) -> bool {
+        std::mem::take(&mut self.grid.pending_clipboard_read_request)
+    }
 
     fn start_selection(&mut self, start: &Position, _client_id: ClientId) {
         self.grid.start_selection(start);

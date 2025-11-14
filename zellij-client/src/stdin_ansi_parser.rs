@@ -151,12 +151,17 @@ impl StdinAnsiParser {
             if let Ok(ansi_sequence) = AnsiStdinInstruction::bg_or_fg_from_bytes(&self.raw_buffer) {
                 self.pending_events.push(ansi_sequence);
                 self.raw_buffer.clear();
+            } else if let Some(clipboard_response) =
+                AnsiStdinInstruction::clipboard_read_response_from_bytes(&self.raw_buffer)
+            {
+                self.pending_events.push(clipboard_response);
+                self.raw_buffer.clear();
             } else if let Ok((color_register, color_sequence)) =
                 color_sequence_from_bytes(&self.raw_buffer)
             {
-                self.raw_buffer.clear();
                 self.pending_color_sequences
                     .push((color_register, color_sequence));
+                self.raw_buffer.clear();
             } else {
                 self.raw_buffer.clear();
             }
@@ -181,6 +186,7 @@ pub enum AnsiStdinInstruction {
     ForegroundColor(String),
     ColorRegisters(Vec<(usize, String)>),
     SynchronizedOutput(Option<SyncOutput>),
+    ClipboardReadResponse(String),
 }
 
 impl AnsiStdinInstruction {
@@ -281,6 +287,24 @@ impl AnsiStdinInstruction {
         } else {
             None
         }
+    }
+
+    pub fn clipboard_read_response_from_bytes(bytes: &[u8]) -> Option<Self> {
+        // OSC52 clipboard response format: ESC]52;c;<base64>ESC\
+        lazy_static! {
+            static ref OSC52_RE: Regex = Regex::new(r"^\u{1b}\]52;[cp];([^\u{1b}]*)\u{1b}\\$").unwrap();
+        }
+        let key_string = String::from_utf8_lossy(bytes);
+        if let Some(captures) = OSC52_RE.captures_iter(&key_string).next() {
+            let base64_content = captures[1].to_string();
+            // Decode base64
+            if let Ok(decoded_bytes) = base64::decode(&base64_content) {
+                if let Ok(clipboard_content) = String::from_utf8(decoded_bytes) {
+                    return Some(AnsiStdinInstruction::ClipboardReadResponse(clipboard_content));
+                }
+            }
+        }
+        None
     }
 }
 

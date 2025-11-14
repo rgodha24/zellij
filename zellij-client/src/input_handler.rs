@@ -306,6 +306,18 @@ impl InputHandler {
                     .send(ClientInstruction::SetSynchronizedOutput(enabled))
                     .unwrap();
             },
+            AnsiStdinInstruction::ClipboardReadResponse(content) => {
+                // Get the request_id from environment variable (simple approach for personal fork)
+                let request_id = std::env::var("ZELLIJ_CLIPBOARD_REQUEST_ID")
+                    .ok()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                
+                self.os_input.send_to_server(ClientToServerMsg::ClipboardReadResponse {
+                    request_id,
+                    content: Some(content),
+                });
+            },
         }
     }
     fn handle_mouse_event(&mut self, mouse_event: &MouseEvent) {
