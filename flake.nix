@@ -1,5 +1,5 @@
 {
-  description = "Zellij with OSC52 clipboard read support";
+  description = "Zellij";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -10,19 +10,23 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        overlays = [ (import rust-overlay) ];
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    rust-overlay,
+  }:
+    flake-utils.lib.eachDefaultSystem (
+      system: let
+        overlays = [(import rust-overlay)];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
-        
+
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          targets = [ "wasm32-wasip1" ];
+          targets = ["wasm32-wasip1"];
         };
-      in
-      {
+      in {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             rustToolchain
@@ -30,32 +34,19 @@
             openssl
             libiconv
             protobuf
-            
+
             # Additional build tools
             cargo
             rustc
             rust-analyzer
           ];
 
-          shellHook = ''
-            echo "Zellij development environment"
-            echo "Rust version: $(rustc --version)"
-            echo ""
-            echo "To build:"
-            echo "  cargo build --release"
-            echo ""
-            echo "To run:"
-            echo "  cargo run --release"
-            echo ""
-            echo "Binary will be at: target/release/zellij"
-          '';
-
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
         };
 
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "zellij";
-          version = "0.41.2-osc52-clipboard-read";
+          version = "0.44.1";
 
           src = ./.;
 
@@ -76,8 +67,8 @@
           ];
 
           meta = with pkgs.lib; {
-            description = "Zellij with OSC52 clipboard read support";
-            homepage = "https://github.com/zellij-org/zellij";
+            description = "Zellij";
+            homepage = "https://github.com/rgodha24/zellij";
             license = licenses.mit;
           };
         };
