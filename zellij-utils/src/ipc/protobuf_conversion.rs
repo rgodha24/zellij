@@ -116,12 +116,10 @@ impl From<ClientToServerMsg> for ProtoClientToServerMsg {
             ClientToServerMsg::ClipboardReadResponse {
                 request_id,
                 content,
-            } => {
-                client_to_server_msg::Message::ClipboardReadResponse(ClipboardReadResponseMsg {
-                    request_id,
-                    content,
-                })
-            },
+            } => client_to_server_msg::Message::ClipboardReadResponse(ClipboardReadResponseMsg {
+                request_id,
+                content,
+            }),
         };
 
         ProtoClientToServerMsg {

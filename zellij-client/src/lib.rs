@@ -114,7 +114,9 @@ pub(crate) enum ClientInstruction {
     #[allow(dead_code)] // we need the session name here even though we're not currently using it
     RenamedSession(String), // String -> new session name
     ConfigFileUpdated,
-    RequestClipboardRead { request_id: u64 },
+    RequestClipboardRead {
+        request_id: u64,
+    },
 }
 
 impl From<ServerToClientMsg> for ClientInstruction {

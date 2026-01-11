@@ -2022,14 +2022,20 @@ pub(crate) fn route_thread_main(
                             request_id,
                             content,
                         } => {
-                            if let Some(session_metadata) = rlocked_sessions.as_ref() {
-                                let _ = session_metadata
-                                    .senders
-                                    .send_to_screen(ScreenInstruction::ClipboardReadResponse {
-                                        request_id,
-                                        content,
-                                    });
-                            }
+                            let retry_instruction = ClientToServerMsg::ClipboardReadResponse {
+                                request_id,
+                                content: content.clone(),
+                            };
+                            send_to_screen_or_retry_queue!(
+                                senders,
+                                ScreenInstruction::ClipboardReadResponse {
+                                    request_id,
+                                    content
+                                },
+                                retry_instruction,
+                                retry_queue
+                            )
+                            .with_context(err_context)?;
                         },
                     }
                     Ok(should_break)

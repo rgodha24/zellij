@@ -293,7 +293,8 @@ impl AnsiStdinInstruction {
     pub fn clipboard_read_response_from_bytes(bytes: &[u8]) -> Option<Self> {
         // OSC52 clipboard response format: ESC]52;c;<base64>ESC\
         lazy_static! {
-            static ref OSC52_RE: Regex = Regex::new(r"^\u{1b}\]52;[cp];([^\u{1b}]*)\u{1b}\\$").unwrap();
+            static ref OSC52_RE: Regex =
+                Regex::new(r"^\u{1b}\]52;[cp];([^\u{1b}]*)\u{1b}\\$").unwrap();
         }
         let key_string = String::from_utf8_lossy(bytes);
         if let Some(captures) = OSC52_RE.captures_iter(&key_string).next() {
@@ -301,7 +302,9 @@ impl AnsiStdinInstruction {
             // Decode base64
             if let Ok(decoded_bytes) = base64::decode(&base64_content) {
                 if let Ok(clipboard_content) = String::from_utf8(decoded_bytes) {
-                    return Some(AnsiStdinInstruction::ClipboardReadResponse(clipboard_content));
+                    return Some(AnsiStdinInstruction::ClipboardReadResponse(
+                        clipboard_content,
+                    ));
                 }
             }
         }

@@ -67,15 +67,13 @@
             pkg-config
             protobuf
             rustToolchain
+            perl
           ];
 
           buildInputs = with pkgs; [
             openssl
             libiconv
           ];
-
-          # Build with all targets including wasm plugins
-          cargoBuildFlags = [ "--all" ];
 
           meta = with pkgs.lib; {
             description = "Zellij with OSC52 clipboard read support";

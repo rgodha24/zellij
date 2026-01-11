@@ -312,11 +312,12 @@ impl InputHandler {
                     .ok()
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or(0);
-                
-                self.os_input.send_to_server(ClientToServerMsg::ClipboardReadResponse {
-                    request_id,
-                    content: Some(content),
-                });
+
+                self.os_input
+                    .send_to_server(ClientToServerMsg::ClipboardReadResponse {
+                        request_id,
+                        content: Some(content),
+                    });
             },
         }
     }
