@@ -33,12 +33,14 @@
             pkg-config
             openssl
             libiconv
+            curl
             protobuf
 
             # Additional build tools
             cargo
             rustc
             rust-analyzer
+            zlib
           ];
 
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
@@ -64,6 +66,8 @@
           buildInputs = with pkgs; [
             openssl
             libiconv
+            curl
+            zlib
           ];
 
           meta = with pkgs.lib; {
