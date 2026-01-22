@@ -2,7 +2,7 @@ use super::super::TerminalPane;
 use crate::panes::sixel::SixelImageStore;
 use crate::panes::LinkHandler;
 use crate::tab::Pane;
-use ::insta::assert_snapshot;
+use insta::assert_snapshot;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

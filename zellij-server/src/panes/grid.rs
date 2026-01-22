@@ -2409,6 +2409,48 @@ impl Grid {
             },
         }
     }
+    pub fn mouse_scroll_left_signal(&self, position: &Position) -> Option<String> {
+        match (&self.mouse_mode, &self.mouse_tracking) {
+            (_, MouseTracking::Off) => None,
+            (MouseMode::NoEncoding | MouseMode::Utf8, _) => {
+                let mut msg: Vec<u8> = vec![27, b'[', b'M', b'b'];
+                msg.append(&mut utf8_mouse_coordinates(
+                    position.column() + 1,
+                    position.line() + 1,
+                ));
+                Some(String::from_utf8_lossy(&msg).into())
+            },
+            (MouseMode::Sgr, _) => {
+                let mouse_event = format!(
+                    "\u{1b}[<66;{:?};{:?}M",
+                    position.column.0 + 1,
+                    position.line.0 + 1
+                );
+                Some(mouse_event)
+            },
+        }
+    }
+    pub fn mouse_scroll_right_signal(&self, position: &Position) -> Option<String> {
+        match (&self.mouse_mode, &self.mouse_tracking) {
+            (_, MouseTracking::Off) => None,
+            (MouseMode::NoEncoding | MouseMode::Utf8, _) => {
+                let mut msg: Vec<u8> = vec![27, b'[', b'M', b'c'];
+                msg.append(&mut utf8_mouse_coordinates(
+                    position.column() + 1,
+                    position.line() + 1,
+                ));
+                Some(String::from_utf8_lossy(&msg).into())
+            },
+            (MouseMode::Sgr, _) => {
+                let mouse_event = format!(
+                    "\u{1b}[<67;{:?};{:?}M",
+                    position.column.0 + 1,
+                    position.line.0 + 1
+                );
+                Some(mouse_event)
+            },
+        }
+    }
     pub fn is_alternate_mode_active(&self) -> bool {
         self.alternate_screen_state.is_some()
     }

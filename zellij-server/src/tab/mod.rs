@@ -347,6 +347,8 @@ pub trait Pane {
     }
     fn scroll_up(&mut self, count: usize, client_id: ClientId);
     fn scroll_down(&mut self, count: usize, client_id: ClientId);
+    fn scroll_left(&mut self, _count: usize, _client_id: ClientId) {}
+    fn scroll_right(&mut self, _count: usize, _client_id: ClientId) {}
     fn clear_scroll(&mut self);
     fn is_scrolled(&self) -> bool;
     fn active_at(&self) -> Instant;
@@ -535,6 +537,12 @@ pub trait Pane {
         None
     }
     fn mouse_scroll_down(&self, _position: &Position) -> Option<String> {
+        None
+    }
+    fn mouse_scroll_left(&self, _position: &Position) -> Option<String> {
+        None
+    }
+    fn mouse_scroll_right(&self, _position: &Position) -> Option<String> {
         None
     }
     fn focus_event(&self) -> Option<String> {
@@ -2616,6 +2624,16 @@ impl Tab {
                     .with_context(err_context)?;
                 return Ok(());
             }
+        } else if self.floating_panes.has_pinned_panes() {
+            let pane_id = self
+                .floating_panes
+                .get_pinned_pane_id_at(position, false)
+                .with_context(err_context)?;
+            if let Some(pane_id) = pane_id {
+                self.write_to_pane_id(&None, input_bytes, false, pane_id, Some(client_id), None)
+                    .with_context(err_context)?;
+                return Ok(());
+            }
         }
 
         let pane_id = self
@@ -4120,6 +4138,52 @@ impl Tab {
         Ok(MouseEffect::default())
     }
 
+    pub fn handle_scrollwheel_left(
+        &mut self,
+        point: &Position,
+        client_id: ClientId,
+    ) -> Result<MouseEffect> {
+        let err_context = || {
+            format!(
+                "failed to handle scrollwheel left at position {point:?} for client {client_id}"
+            )
+        };
+
+        if let Some(pane) = self.get_pane_at(point, false).with_context(err_context)? {
+            let relative_position = pane.relative_position(point);
+            if let Some(mouse_event) = pane.mouse_scroll_left(&relative_position) {
+                self.write_to_terminal_at(mouse_event.into_bytes(), point, client_id)
+                    .with_context(err_context)?;
+            } else {
+                pane.scroll_left(3, client_id);
+            }
+        }
+        Ok(MouseEffect::default())
+    }
+
+    pub fn handle_scrollwheel_right(
+        &mut self,
+        point: &Position,
+        client_id: ClientId,
+    ) -> Result<MouseEffect> {
+        let err_context = || {
+            format!(
+                "failed to handle scrollwheel right at position {point:?} for client {client_id}"
+            )
+        };
+
+        if let Some(pane) = self.get_pane_at(point, false).with_context(err_context)? {
+            let relative_position = pane.relative_position(point);
+            if let Some(mouse_event) = pane.mouse_scroll_right(&relative_position) {
+                self.write_to_terminal_at(mouse_event.into_bytes(), point, client_id)
+                    .with_context(err_context)?;
+            } else {
+                pane.scroll_right(3, client_id);
+            }
+        }
+        Ok(MouseEffect::default())
+    }
+
     fn get_pane_at(
         &mut self,
         point: &Position,
@@ -4267,6 +4331,10 @@ impl Tab {
             self.handle_scrollwheel_up(&event.position, 3, client_id)
         } else if event.wheel_down {
             self.handle_scrollwheel_down(&event.position, 3, client_id)
+        } else if event.wheel_left {
+            self.handle_scrollwheel_left(&event.position, client_id)
+        } else if event.wheel_right {
+            self.handle_scrollwheel_right(&event.position, client_id)
         } else if event.right && event.alt {
             self.mouse_hover_pane_id.remove(&client_id);
             Ok(MouseEffect::ungroup())

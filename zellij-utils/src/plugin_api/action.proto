@@ -515,6 +515,8 @@ message MouseEventPayload {
   bool middle = 4;
   bool wheel_up = 5;
   bool wheel_down = 6;
+  bool wheel_left = 12;
+  bool wheel_right = 13;
   bool shift = 7;
   bool alt = 8;
   bool ctrl = 9;

@@ -688,6 +688,10 @@ pub struct MouseEventPayload {
     pub wheel_up: bool,
     #[prost(bool, tag="6")]
     pub wheel_down: bool,
+    #[prost(bool, tag="12")]
+    pub wheel_left: bool,
+    #[prost(bool, tag="13")]
+    pub wheel_right: bool,
     #[prost(bool, tag="7")]
     pub shift: bool,
     #[prost(bool, tag="8")]
